@@ -28,15 +28,23 @@ def test_checkin_unknown_habit_404():
 
 
 def test_validation_empty_habit_name_422():
-    r = client.post("/habits", json={"name": ""})
-    assert r.status_code == 422
-
-    r2 = client.post("/habits", json={"name": "   "})
-    assert r2.status_code == 422
+    for bad_name in ["", "   ", "\t\n", "\u200b", "​"]:
+        r = client.post("/habits", json={"name": bad_name})
+        assert r.status_code == 422
 
 
 def test_validation_malformed_day_422():
     hid = client.post("/habits", json={"name": "Meditate"}).json()["id"]
-    for bad_day in ["not-a-date", "2026-13-45", "yesterday", ""]:
+    invalid_days = [
+        "not-a-date",
+        "2026-02-30",  # Invalid date in February
+        "2026-13-45",  # Invalid month
+        "20260922",  # Missing hyphens
+        "2026-9-22",  # Missing leading zero
+        "2026/09/22",  # Slashes instead of hyphens
+        "yesterday",
+        "",
+    ]
+    for bad_day in invalid_days:
         r = client.post(f"/habits/{hid}/checkin", json={"day": bad_day})
         assert r.status_code == 422

@@ -10,10 +10,10 @@ Test:
     pytest
 """
 
+import sqlite3
 from contextlib import closing
 from datetime import date
 from pathlib import Path
-import sqlite3
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
@@ -31,20 +31,16 @@ def get_db() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(get_db()) as conn:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS habits (
+        conn.execute("""CREATE TABLE IF NOT EXISTS habits (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL
-            )"""
-        )
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS checkins (
+            )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS checkins (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 habit_id INTEGER NOT NULL,
                 day      TEXT NOT NULL,
                 FOREIGN KEY (habit_id) REFERENCES habits (id)
-            )"""
-        )
+            )""")
         conn.commit()
 
 
@@ -57,22 +53,28 @@ class HabitIn(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
+        if not isinstance(v, str):
+            raise ValueError("name must be a string")
         v = v.strip()
-        if not v:
-            raise ValueError("habit name cannot be empty")
+        if not v or not any(c.isprintable() and not c.isspace() for c in v):
+            raise ValueError("habit name cannot be empty or whitespace only")
         return v
 
 
 class CheckinIn(BaseModel):
-    day: str  # ISO date, e.g. "2026-09-22"
+    day: str  # ISO date, strictly YYYY-MM-DD
 
     @field_validator("day")
     @classmethod
     def validate_day(cls, v: str) -> str:
+        if not isinstance(v, str) or len(v) != 10:
+            raise ValueError("day must be formatted strictly as YYYY-MM-DD")
         try:
-            date.fromisoformat(v)
-        except (ValueError, TypeError):
-            raise ValueError("day must be a valid date in YYYY-MM-DD format")
+            parsed = date.fromisoformat(v)
+            if parsed.isoformat() != v:
+                raise ValueError("day must be formatted strictly as YYYY-MM-DD")
+        except ValueError:
+            raise ValueError(f"invalid calendar date: {v}")
         return v
 
 
