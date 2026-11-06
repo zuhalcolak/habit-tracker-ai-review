@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from fastapi.testclient import TestClient
 
 from main import app
@@ -25,3 +26,12 @@ def test_checkin_flow():
 def test_checkin_unknown_habit_404():
     r = client.post("/habits/99999/checkin", json={"day": "2026-09-22"})
     assert r.status_code == 404
+
+
+def test_streak_today():
+    hid = client.post("/habits", json={"name": "Water plants"}).json()["id"]
+    today = date.today().isoformat()
+    client.post(f"/habits/{hid}/checkin", json={"day": today})
+    r = client.get(f"/habits/{hid}/streak")
+    assert r.status_code == 200
+    assert r.json()["streak"] == 1

@@ -10,9 +10,10 @@ Test:
     pytest
 """
 
-import sqlite3
 from contextlib import closing
+from datetime import date, timedelta
 from pathlib import Path
+import sqlite3
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -30,16 +31,20 @@ def get_db() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(get_db()) as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS habits (
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS habits (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL
-            )""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS checkins (
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS checkins (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 habit_id INTEGER NOT NULL,
                 day      TEXT NOT NULL,
                 FOREIGN KEY (habit_id) REFERENCES habits (id)
-            )""")
+            )"""
+        )
         conn.commit()
 
 
@@ -92,3 +97,24 @@ def list_checkins(habit_id: int):
             "SELECT day FROM checkins WHERE habit_id = ? ORDER BY day", (habit_id,)
         ).fetchall()
     return [r["day"] for r in rows]
+
+
+@app.get("/habits/{habit_id}/streak")
+def get_streak(habit_id: int):
+    with closing(get_db()) as conn:
+        rows = conn.execute(
+            "SELECT day FROM checkins WHERE habit_id = ? ORDER BY day DESC",
+            (habit_id,),
+        ).fetchall()
+
+    days = [date.fromisoformat(r["day"]) for r in rows]
+    today = date.today()
+    streak = 0
+    current = today
+    for d in days:
+        if d == current:
+            streak += 1
+            current -= timedelta(days=1)
+        elif d < current:
+            break
+    return {"habit_id": habit_id, "streak": streak}
