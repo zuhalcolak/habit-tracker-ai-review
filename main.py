@@ -10,12 +10,13 @@ Test:
     pytest
 """
 
-import sqlite3
 from contextlib import closing
+from datetime import date
 from pathlib import Path
+import sqlite3
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 DB_PATH = Path(__file__).parent / "habits.db"
 
@@ -30,16 +31,20 @@ def get_db() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(get_db()) as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS habits (
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS habits (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL
-            )""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS checkins (
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS checkins (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 habit_id INTEGER NOT NULL,
                 day      TEXT NOT NULL,
                 FOREIGN KEY (habit_id) REFERENCES habits (id)
-            )""")
+            )"""
+        )
         conn.commit()
 
 
@@ -49,9 +54,26 @@ init_db()
 class HabitIn(BaseModel):
     name: str
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("habit name cannot be empty")
+        return v
+
 
 class CheckinIn(BaseModel):
     day: str  # ISO date, e.g. "2026-09-22"
+
+    @field_validator("day")
+    @classmethod
+    def validate_day(cls, v: str) -> str:
+        try:
+            date.fromisoformat(v)
+        except (ValueError, TypeError):
+            raise ValueError("day must be a valid date in YYYY-MM-DD format")
+        return v
 
 
 @app.post("/habits")

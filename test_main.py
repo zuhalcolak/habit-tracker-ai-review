@@ -25,3 +25,18 @@ def test_checkin_flow():
 def test_checkin_unknown_habit_404():
     r = client.post("/habits/99999/checkin", json={"day": "2026-09-22"})
     assert r.status_code == 404
+
+
+def test_validation_empty_habit_name_422():
+    r = client.post("/habits", json={"name": ""})
+    assert r.status_code == 422
+
+    r2 = client.post("/habits", json={"name": "   "})
+    assert r2.status_code == 422
+
+
+def test_validation_malformed_day_422():
+    hid = client.post("/habits", json={"name": "Meditate"}).json()["id"]
+    for bad_day in ["not-a-date", "2026-13-45", "yesterday", ""]:
+        r = client.post(f"/habits/{hid}/checkin", json={"day": bad_day})
+        assert r.status_code == 422
