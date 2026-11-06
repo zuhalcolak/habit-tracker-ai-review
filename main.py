@@ -10,10 +10,10 @@ Test:
     pytest
 """
 
+import sqlite3
 from contextlib import closing
 from datetime import date, timedelta
 from pathlib import Path
-import sqlite3
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -31,20 +31,16 @@ def get_db() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(get_db()) as conn:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS habits (
+        conn.execute("""CREATE TABLE IF NOT EXISTS habits (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL
-            )"""
-        )
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS checkins (
+            )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS checkins (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 habit_id INTEGER NOT NULL,
                 day      TEXT NOT NULL,
                 FOREIGN KEY (habit_id) REFERENCES habits (id)
-            )"""
-        )
+            )""")
         conn.commit()
 
 
@@ -100,21 +96,53 @@ def list_checkins(habit_id: int):
 
 
 @app.get("/habits/{habit_id}/streak")
-def get_streak(habit_id: int):
+def get_streak(habit_id: int, today: str | None = None):
+    # Determine reference date
+    if today:
+        try:
+            ref_date = date.fromisoformat(today)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="today must be in YYYY-MM-DD format"
+            )
+    else:
+        ref_date = date.today()
+
     with closing(get_db()) as conn:
+        habit = conn.execute(
+            "SELECT id FROM habits WHERE id = ?", (habit_id,)
+        ).fetchone()
+        if habit is None:
+            raise HTTPException(status_code=404, detail="unknown habit")
+
+        # Distinct check-in days
         rows = conn.execute(
-            "SELECT day FROM checkins WHERE habit_id = ? ORDER BY day DESC",
+            "SELECT DISTINCT day FROM checkins WHERE habit_id = ?",
             (habit_id,),
         ).fetchall()
 
-    days = [date.fromisoformat(r["day"]) for r in rows]
-    today = date.today()
+    checked_days = set()
+    for r in rows:
+        try:
+            checked_days.add(date.fromisoformat(r["day"]))
+        except ValueError:
+            continue
+
+    if not checked_days:
+        return {"habit_id": habit_id, "streak": 0}
+
+    # Streak counts consecutive days ending on ref_date (if checked in today)
+    # or ending on yesterday (if not checked in yet today, streak is preserved).
+    if ref_date in checked_days:
+        cursor = ref_date
+    elif (ref_date - timedelta(days=1)) in checked_days:
+        cursor = ref_date - timedelta(days=1)
+    else:
+        return {"habit_id": habit_id, "streak": 0}
+
     streak = 0
-    current = today
-    for d in days:
-        if d == current:
-            streak += 1
-            current -= timedelta(days=1)
-        elif d < current:
-            break
+    while cursor in checked_days:
+        streak += 1
+        cursor -= timedelta(days=1)
+
     return {"habit_id": habit_id, "streak": streak}
